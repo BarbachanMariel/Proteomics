@@ -1,0 +1,570 @@
+---
+title: "Proteomics Analysis"
+author: "Mariel Barbachan"
+date: "05/06/2020"
+output: 
+ html_document:
+    toc: true
+    number_sections: true
+    theme: cosmo
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T)
+```
+
+# Sample Information
+Analysis from the results of a label free mass spectrometry experiment on paraffin embedded samples stratified as follows:
+
+* Red Blood Cells rich clot analogues (RBC): n = 5
+* Fibrin rich clot analogues (FIB): n = 5
+
+
+```{r readData, echo=FALSE}
+# rbc
+rbc1 <- read.csv("./R_files/RBC_FFPE_1.csv")
+rbc2 <- read.csv("./R_files/RBC_FFPE_2.csv")
+rbc3 <- read.csv("./R_files/RBC_FFPE_3.csv")
+rbc4 <- read.csv("./R_files/RBC_FFPE_4.csv")
+rbc5 <- read.csv("./R_files/RBC_FFPE_A.csv")
+# fibrin
+fib1 <- read.csv("./R_files/FIB_FFPE_1.csv")
+fib2 <- read.csv("./R_files/FIB_FFPE_2.csv")
+fib3 <- read.csv("./R_files/FIB_FFPE_3.csv")
+fib4 <- read.csv("./R_files/FIB_FFPE_4.csv")
+fib5 <- read.csv("./R_files/FIB_FFPE_B.csv")
+```
+#Coverage Analysis
+
+On the previously conducted analysis, we could see that filtering the data based on the coverage score was not a good idea as the majority of the proteins had low coverage values. The same analysis was conducted here and the summary statistics of the coverage score for each sample is shown on the table below, and based on that and the plots we can see a similar behaviour regarding the coverage.
+
+```{r coverageStat, echo=FALSE,message = FALSE}
+library(DT)
+coverageDF <- list(Fib1 = fib1$Coverage,Fib2 = fib2$Coverage,Fib3 = fib3$Coverage,Fib4 = fib4$Coverage,Fib5 = fib5$Coverage, RBC1 = rbc1$Coverage,RBC2 = rbc2$Coverage,RBC3 = rbc3$Coverage,RBC4 = rbc4$Coverage,RBC5 = rbc5$Coverage)
+stats = c()
+for(element in names(coverageDF)){
+  stats = cbind(stats,summary(coverageDF[[element]]))
+}
+colnames(stats) = names(coverageDF)
+knitr::kable(stats)
+```
+
+<br><br>
+
+```{r QC Plots RBC, echo = FALSE,message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+
+g1 <- rbc1 %>% ggplot(aes(x=Coverage)) + geom_density() + labs(title = "1st RBC Sample") + theme_minimal()
+g2 <- rbc2 %>% ggplot(aes(x=Coverage)) + geom_density() + labs(title = "2nd RBC Sample") + theme_minimal()
+g3 <- rbc3 %>% ggplot(aes(x=Coverage)) + geom_density() + labs(title = "3rd RBC Sample") + theme_minimal()
+g4 <- rbc4 %>% ggplot(aes(x=Coverage)) + geom_density() + labs(title = "4th RBC Sample") + theme_minimal()
+g5 <- rbc5 %>% ggplot(aes(x=Coverage)) + geom_density() + labs(title = "5th RBC Sample") + theme_minimal()
+
+
+annotate_figure(ggarrange(g1, g2,g3,g4,g5,ncol = 2, nrow = 3),top = text_grob("Red Blood Cells Coverage Analysis", face = "bold", size = 14))
+```
+
+```{r QC Plots FIB, echo = FALSE,message = FALSE}
+
+p1 <- fib1 %>% ggplot(aes(x=Coverage)) + geom_density() + labs(title = "1st Fibrin Sample") + theme_minimal()
+p2 <- fib2 %>% ggplot(aes(x=Coverage)) + geom_density() + labs(title = "2nd Fibrin Sample") + theme_minimal()
+p3 <- fib3 %>% ggplot(aes(x=Coverage)) + geom_density() + labs(title = "3rd Fibrin Sample") + theme_minimal()
+p4 <- fib4 %>% ggplot(aes(x=Coverage)) + geom_density() + labs(title = "4th Fibrin Sample") + theme_minimal()
+p5 <- fib5 %>% ggplot(aes(x=Coverage)) + geom_density() + labs(title = "5th Fibrin Sample") + theme_minimal()
+# get a feel of the distribution of coverage 
+
+annotate_figure(ggarrange(p1, p2,p3,p4,p5,ncol = 2, nrow = 3),top = text_grob("Fibrin Coverage Analysis", face = "bold", size = 14))
+```
+
+
+
+
+#Overlapping proteins
+
+```{r Venn, echo = FALSE}
+library(RVenn)
+veclist <- list(fib1$Accession,fib2$Accession,fib3$Accession,fib4$Accession, fib5$Accession, rbc1$Accession,rbc2$Accession,rbc3$Accession,rbc4$Accession,rbc5$Accession)
+
+veclist = lapply(veclist, as.character)
+
+vennList = Venn(veclist)
+
+FIB = overlap(vennList,c(1,2,3,4,5)) 
+RBC =  overlap(vennList,c(6,7,8,9,10))
+
+listVennObj = list(RBC,FIB)
+
+overlapObj = Venn(listVennObj)
+overlapProtein = overlap(vennList)
+
+overlapFIB = FIB[! FIB %in% RBC ]
+overlapRBC = RBC[! RBC %in% FIB ]
+ggvenn(overlapObj, thickness = 0) 
+
+
+```
+
+The Venn Diagram shows that 101 proteins are overlapping between the RBC (Set_1) and FIB (Set_2) Groups - and this intersection is used for comparison between groups, 60 proteins are unique to the RBC samples, and 115 proteins are unique to the FIB samples. 
+
+```{r getScores, echo = FALSE}
+
+get_scores <- function(df1,common_list) {
+  
+  scores <- c()
+  for (i in 1:length(common_list)) {
+    scores[i] <- df1$Score[as.character(df1$Accession)==as.character(common_list[i])]
+    #print(scores[i])
+  }
+  return(scores)
+}
+rbc1_common_scores <- get_scores(rbc1,overlapProtein)
+rbc2_common_scores <- get_scores(rbc2,overlapProtein)
+rbc3_common_scores <- get_scores(rbc3,overlapProtein)
+rbc4_common_scores <- get_scores(rbc4,overlapProtein)
+rbc5_common_scores <- get_scores(rbc5,overlapProtein)
+
+fib1_common_scores <- get_scores(fib1,overlapProtein)
+fib2_common_scores <- get_scores(fib2,overlapProtein)
+fib3_common_scores <- get_scores(fib3,overlapProtein)
+fib4_common_scores <- get_scores(fib4,overlapProtein)
+fib5_common_scores <- get_scores(fib5,overlapProtein)
+
+rbc_df_scores <- data.frame(Accession=as.character(overlapProtein),Score_rbc1=rbc1_common_scores,Score_rbc2=rbc2_common_scores,Score_rbc3=rbc3_common_scores,Score_rbc4=rbc4_common_scores,Score_rbc5=rbc5_common_scores, stringsAsFactors = T)
+
+fib_df_scores <- data.frame(Accession=as.character(overlapProtein),Score_fib1=fib1_common_scores,Score_fib2=fib2_common_scores,Score_fib3=fib3_common_scores,Score_fib4=fib4_common_scores,Score_fib5=fib5_common_scores, stringsAsFactors = T)
+
+
+```
+
+##Protein datasets
+
+The correlation matrices with the co-abundant proteins were used to create the adjacency matrices necessary for the network analysis. Here we have three distinct datasets: i) Fibrin samples with proteins exclusive to the FIB group (115 proteins), ii) Red Blood cells samples with with proteins exclusive to the RBC group (60 proteins), and iii) All samples with the 101 proteins that are common to all samples. 
+
+
+# RBC Analysis
+
+## Pearson correlation  
+
+```{r CorrelationRBC, echo=FALSE, message=FALSE}
+library(Hmisc)
+library(corrplot)
+get_scores <- function(df1,common_list) {
+  
+  scores <- c()
+  for (i in 1:length(common_list)) {
+    scores[i] <- df1$Score[as.character(df1$Accession)==as.character(common_list[i])]
+    #print(scores[i])
+  }
+  return(scores)
+}
+
+rbc1_net_scores <- get_scores(rbc1,overlapRBC)
+rbc2_net_scores <- get_scores(rbc2,overlapRBC)
+rbc3_net_scores <- get_scores(rbc3,overlapRBC)
+rbc4_net_scores <- get_scores(rbc4,overlapRBC)
+rbc5_net_scores <- get_scores(rbc5,overlapRBC)
+
+RBCnet_DF =  data.frame(Accession=as.character(overlapRBC),Score_rbc1=rbc1_net_scores,Score_rbc2=rbc2_net_scores,Score_rbc3=rbc3_net_scores,Score_rbc4=rbc4_net_scores,Score_rbc5=rbc5_net_scores, stringsAsFactors = T)
+
+rownames(RBCnet_DF) = RBCnet_DF$Accession
+sorted.df <- RBCnet_DF[order(RBCnet_DF$Score_rbc1,decreasing = T),]
+sorted_RBC.df <- sorted.df[1:50,] # take the top 50 
+geneSymbol_new = read.table("RBC_sym.csv", sep = ',', header = T)
+
+scoreData <- as.matrix(t(subset(sorted_RBC.df,select=-Accession)))
+
+
+geneNameDF = sorted_RBC.df[!(row.names(sorted_RBC.df) %in% row.names(sorted_RBC.df)[!rownames(sorted_RBC.df)%in%geneSymbol_new$From]), ]
+rownames(geneNameDF) = geneSymbol_new$To[geneSymbol_new$From %in% rownames(geneNameDF)]
+
+scoreData <- as.matrix(t(subset(geneNameDF,select=-Accession)))
+mydata.rcorr = rcorr(scoreData)
+
+RBC.cor = cor(scoreData)
+corrplot(RBC.cor, type = "lower",order = "hclust",hclust.method = "ward", tl.cex = 0.5,tl.col = "darkgrey",title = "Correlation Matrix | RCB Samples",tl.srt = 45,mar = c(0,0,1.2,0) )
+
+
+```
+
+<br><br>
+
+Using the correlation matrix above to extract information on the abundancy profile of the top 50 highly correlated proteins with a threshold of +/- 0.80, the network analysis was carried out and resulted in the graph below. The node size is proportional with the degree (how connected the protein is), the red edges represent positive correlation and blue edges represent negative correlation. The optimal community structure was calculated for the graph, in using the maximal modularity score.This analysis resulted in the six communities represented as the node colours and shown in the table below.
+
+##Network Analysis
+
+```{r RedeR_RBC,echo = FALSE, message=FALSE, warning = FALSE}
+
+library(RedeR)
+library(igraph)
+library(reshape2) 
+library(visNetwork)
+
+
+g = graph_from_adjacency_matrix(RBC.cor, weighted=T, mode="undirected")
+g <- simplify(g, remove.multiple=TRUE, remove.loops=TRUE)
+
+# Colour negative correlation edges as blue
+E(g)[which(E(g)$weight<0)]$color <- "darkblue"
+
+# Colour positive correlation edges as red
+E(g)[which(E(g)$weight>0)]$color <- "darkred"
+
+# Convert edge weights to absolute values
+E(g)$weight <- abs(E(g)$weight)
+
+V(g)$name <- V(g)$name
+V(g)$label <- V(g)$name
+# Remove edges below absolute Pearson correlation 0.8
+g <- delete_edges(g, E(g)[which(E(g)$weight<0.8)])
+
+# Remove any vertices remaining that have no edges
+g <- delete.vertices(g, degree(g)==0)
+
+
+edgeweights <- E(g)$weight
+E(g)$width = E(g)$weight *2
+##This function calculates the optimal community structure of a graph, by maximizing the modularity measure over all possible partitions.
+##The calculation is done by transforming the modularity maximization into an integer programming problem, and then calling the GLPK library to solve that
+cg = cluster_optimal(g, weights = NULL)
+V(g)$color <- cg$membership
+
+deg <- degree(g, mode="all")
+V(g)$size = deg*3
+
+visIgraph(g ,physics = F, smooth = TRUE,idToLabel = T, layout = "layout_with_kk")%>%visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE,collapse = TRUE) %>% visLayout(randomSeed = 123,improvedLayout = T)%>%visPhysics(solver = "repulsion")#%>%visClusteringByHubsize()#visNodes(mass= 5)#visPhysics(enabled = F)
+
+
+```
+
+
+<br><br>
+```{r communityTables, echo = FALSE, message=FALSE, warning = FALSE}
+members = cg$membership 
+communityMatrix = data.frame(nodes = V(g)$name, community = as.factor(members)) 
+datatable(communityMatrix,style="bootstrap",fillContainer = FALSE, caption = 'Table 1: Protein communities | RBC Samples',rownames = FALSE, options = list(columnDefs = list(list(className = 'dt-center', targets = 0:1)),order = list(list(1, 'asc')), "pageLength" = 50))
+
+```
+
+
+
+
+<br><br>
+
+```{r community1,echo = FALSE, message=FALSE, warning = FALSE,out.width="100%"}
+library(InterMineR)
+library(plotly)
+im.human = initInterMine(listMines()["HumanMine"])
+human.widgets = as.data.frame(getWidgets(im.human))
+members = cg$membership 
+communityMatrix = data.frame(nodes = V(g)$name, community = as.factor(members))
+
+communityMatrix = communityMatrix[order(communityMatrix$community),]
+
+X<-split(communityMatrix, communityMatrix$community)
+com1 = X$`6`
+GO_enrichResult = doEnrichment(
+  im = im.human,
+  ids = overlapRBC ,
+  widget = "pathway_enrichment"
+)
+makePlotlyGO = function(GO, ttl){
+  
+plotDF = data.frame(Pathway = GO$data$description, Count=as.numeric(GO$data$count), pVal = GO$data$pValue)
+plotDF = plotDF[ !duplicated(plotDF$Pathway), ]
+plotDF = plotDF[order(plotDF$pVal,decreasing = F),]
+plotDF = plotDF[1:10,]
+
+
+
+plotDF$Pathway <- factor(plotDF$Pathway, levels = unique(plotDF$Pathway)[order(plotDF$Count, decreasing = T)])
+text = paste("p-value:",plotDF$pVal, sep = " ")
+yaxis <- list(
+  title = '',
+  automargin = TRUE,
+  titlefont = list(size=30)
+)
+logP = -log(as.numeric(plotDF$pVal))
+fig <- plot_ly(
+  y = plotDF$Pathway,
+  x = logP,
+  marker = list(color ="#4766a9",
+                            line = list(color = "rgb(20, 20, 20)",
+                                     width = 2)),width = 800, height = 600,
+  type = "bar",orientation = 'h',
+
+  text = text
+
+)
+
+
+fig <- fig %>% layout(title = ttl,
+         xaxis = list(title = "-log(p-value)"),
+         autosize = F, yaxis = yaxis)
+
+return(fig)
+}
+
+t = "Pathway Analysis on proteins exclusive to the RBC samples"
+
+#makePlotlyGO(GO_enrichResult, t)
+```
+
+<br><br>
+
+# FIB Analysis
+
+## Pearson correlation analysis
+
+```{r CorrelationFIB, echo=FALSE, message=FALSE}
+library(Hmisc)
+library(corrplot)
+
+
+
+fib1_net_scores <- get_scores(fib1,overlapFIB)
+fib2_net_scores <- get_scores(fib2,overlapFIB)
+fib3_net_scores <- get_scores(fib3,overlapFIB)
+fib4_net_scores <- get_scores(fib4,overlapFIB)
+fib5_net_scores <- get_scores(fib5,overlapFIB)
+
+FIBnet_DF <- data.frame(Accession=as.character(overlapFIB),Score_fib1=fib1_net_scores,Score_fib2=fib2_net_scores,Score_fib3=fib3_net_scores,Score_fib4=fib4_net_scores,Score_fib5=fib5_net_scores, stringsAsFactors = T)
+
+rownames(FIBnet_DF) = FIBnet_DF$Accession
+sorted.df <- FIBnet_DF[order(FIBnet_DF$Score_fib1,decreasing = T),]
+sorted_FIB.df <- sorted.df[1:50,] # take the top 50 
+#write.csv(row.names(sorted_FIB.df), "FIB_top50.csv") #right csv file for mapping with uniprot DB.
+
+
+geneSymbolFIB = read.table("FIB_sym.csv", sep = ',', header = T)
+geneNameDF_FIB = sorted_FIB.df[!(row.names(sorted_FIB.df) %in% row.names(sorted_FIB.df)[!rownames(sorted_FIB.df)%in%geneSymbolFIB$From]), ]
+rownames(geneNameDF_FIB) = geneSymbolFIB$To[geneSymbolFIB$From %in% rownames(geneNameDF_FIB)]
+
+scoreDataFIB <- as.matrix(t(subset(geneNameDF_FIB,select=-Accession)))
+rcorrFIB = rcorr(scoreDataFIB)
+
+#mydata.rcorr$P
+
+FIB.cor = cor(scoreDataFIB)
+corrplot(FIB.cor, type = "lower",order = "hclust",hclust.method = "ward", tl.cex = 0.5,tl.col = "darkgrey",title = "Correlation Matrix | FIB Samples",tl.srt = 45,mar = c(0,0,1.2,0) )
+
+
+```
+
+<br><br>
+
+
+## Network analysis
+
+The same method for constructing the co-expression network used on the RBC samples was applied to the FIB dataset here, in this case using the 115 proteins unique to FIB samples. The optimal community analysis resulted in three communities listed in the table below.
+
+
+```{r RedeR_FIB,echo = FALSE, message=FALSE, warning = FALSE}
+
+gfib = graph_from_adjacency_matrix(FIB.cor, weighted=T, mode="undirected")
+gfib <- simplify(gfib, remove.multiple=TRUE, remove.loops=TRUE)
+
+# Colour negative correlation edges as blue
+E(gfib)[which(E(gfib)$weight<0)]$color <- "darkblue"
+
+# Colour positive correlation edges as red
+E(gfib)[which(E(gfib)$weight>0)]$color <- "darkred"
+
+# Convert edge weights to absolute values
+E(gfib)$weight <- abs(E(gfib)$weight)
+
+V(gfib)$name <- V(gfib)$name
+V(gfib)$label <- V(gfib)$name
+# Remove edges below absolute Pearson correlation 0.8
+gfib <- delete_edges(gfib, E(gfib)[which(E(gfib)$weight<0.8)])
+
+# Remove any vertices remaining that have no edges
+gfib <- delete.vertices(gfib, degree(gfib)==0)
+
+
+E(gfib)$width = E(gfib)$weight *2
+
+cofib = cluster_optimal(gfib, weights = NULL)
+V(gfib)$color <- cofib$membership +2
+
+degfib <- degree(gfib, mode="all")
+V(gfib)$size = degfib*3
+
+visIgraph(gfib ,physics = F, smooth = TRUE,idToLabel = T,layout = "layout_with_kk")%>%visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE,collapse = TRUE) %>% visLayout(randomSeed = 123,improvedLayout = T)%>%visPhysics(solver = "repulsion")#%>%visClusteringByHubsize()#visNodes(mass= 5)#visPhysics(enabled = F)
+
+```
+
+
+```{r communityTablesFIB, echo = FALSE, message=FALSE, warning = FALSE}
+membersFib = cofib$membership 
+communityMatrixFib = data.frame(nodes = V(gfib)$name, community = as.factor(membersFib)) 
+communityMatrixFib = communityMatrixFib[order(communityMatrixFib$community),]
+
+XFib<-split(communityMatrixFib, communityMatrixFib$community)
+datatable(communityMatrixFib,style="bootstrap", caption = 'Table 2: Proteins communities - Fibrin Samples',rownames = FALSE, options = list(columnDefs = list(list(className = 'dt-center', targets = 0:1)),order = list(list(1, 'asc')), "pageLength" = 50))
+
+```
+
+
+#Differential Analysis
+
+Here I used a linear model approach to assess differential abundance/expression between the two groups - this analysis resulted in 58 differentially abundant proteins. The table below shows the metrics of the top-ranked proteins from the linear model fit.
+
+```{r AllData,echo = FALSE, message=FALSE, warning = FALSE }
+
+library(limma)
+
+rbc1_common_scores <- get_scores(rbc1,overlapProtein)
+rbc2_common_scores <- get_scores(rbc2,overlapProtein)
+rbc3_common_scores <- get_scores(rbc3,overlapProtein)
+rbc4_common_scores <- get_scores(rbc4,overlapProtein)
+rbc5_common_scores <- get_scores(rbc5,overlapProtein)
+
+fib1_common_scores <- get_scores(fib1,overlapProtein)
+fib2_common_scores <- get_scores(fib2,overlapProtein)
+fib3_common_scores <- get_scores(fib3,overlapProtein)
+fib4_common_scores <- get_scores(fib4,overlapProtein)
+fib5_common_scores <- get_scores(fib5,overlapProtein)
+
+rbc_df_scores <- data.frame(Accession=as.character(overlapProtein),Score_rbc1=rbc1_common_scores,Score_rbc2=rbc2_common_scores,Score_rbc3=rbc3_common_scores,Score_rbc4=rbc4_common_scores,Score_rbc5=rbc5_common_scores, stringsAsFactors = T)
+
+fib_df_scores <- data.frame(Accession=as.character(overlapProtein),Score_fib1=fib1_common_scores,Score_fib2=fib2_common_scores,Score_fib3=fib3_common_scores,Score_fib4=fib4_common_scores,Score_fib5=fib5_common_scores, stringsAsFactors = T)
+
+rbc = as.data.frame(rbc_df_scores)
+
+fib = as.data.frame(fib_df_scores)
+
+
+geneMap = read.csv("AllOverlapProt.csv")
+limmaDF = cbind(rbc,fib[,-1])
+
+row.names(limmaDF) =  geneMap$To[geneMap$From %in% limmaDF$Accession]
+limmaDF = limmaDF[,-1]
+Group = as.factor(c(rep("RBC", 5), rep("FIB", 5)))
+design =  model.matrix(~ 0 + Group)
+colnames(design) = levels(Group)
+cm = makeContrasts(RBC-FIB,levels=design)
+
+fit = lmFit(limmaDF,design)
+fit_contrast = contrasts.fit(fit,cm)
+bayes.fit = eBayes(fit_contrast)
+tt  = topTable(bayes.fit, number = nrow(bayes.fit),p.value = 0.05)
+
+datatable(tt,style="bootstrap", caption = 'Table 3: Differentially abundant proteins', options = list(columnDefs = list(list(className = 'dt-center', targets = 0:5))))
+
+
+
+```
+
+
+## Common proteins network
+
+The differentially abundant protein scores were used to perform the coexpression analysis on the comparison between groups. The heatmap below shows differentially abundant proteins and resulted in clusters that are correspondent with the sample groups. A coexpression matrix was generated and used to construct the co-expression network.  The node colours are based on the optimal community analysis, which is shown below in Table 4. Only edges with a correlation greater than +/- 0.80 were used to plot the graph.  
+
+```{r limmaDecideTest,echo = FALSE, message=FALSE,results='hide',fig.keep='all', warning = FALSE, verbose = FALSE}
+
+res.fit = decideTests(bayes.fit, method = "global")
+
+datatable(summary(res.fit),style="bootstrap", caption = 'Table 4: Differentially abundant proteins | Association with contrast',rownames = FALSE, options = list(columnDefs = list(list(className = 'dt-center', targets = 0))) )
+
+limma.res <- topTable(bayes.fit,coef="RBC - FIB",sort.by="p",n="Inf")
+limma.res$Accession <- rownames(limma.res)
+
+features<-rowSums(res.fit!=0)>0
+features<-names(features)[features]
+DEexp<-limmaDF[features,]
+
+
+library(RColorBrewer)
+if (!require("gplots")) {
+   install.packages("gplots", dependencies = TRUE)
+   library(gplots)
+}
+tt$name = rownames(tt)
+tt$degenes = unclass(res.fit[tt$name,])
+mypalette <- brewer.pal(11,"RdYlBu")
+morecols <- colorRampPalette(mypalette)
+heatmap.2(as.matrix(DEexp), col=rev(morecols(50)), trace = "none",main="Differentially abundant proteins",scale = "row",cexRow = 0.25)
+
+
+res <- cea(x=DEexp,  p.adj.method="BH", sig=0.05, nper=1000, plot=F, cor.method = "pearson")
+
+gDE = graph_from_adjacency_matrix(res, weighted=T, mode="undirected")
+gDE <- simplify(gDE, remove.multiple=TRUE, remove.loops=TRUE)
+
+# Colour negative correlation edges as blue
+E(gDE)[which(E(gDE)$weight<0)]$color <- "darkblue"
+
+# Colour positive correlation edges as red
+E(gDE)[which(E(gDE)$weight>0)]$color <- "darkred"
+
+# Convert edge weights to absolute values
+E(gDE)$weight <- abs(E(gDE)$weight)
+
+V(gDE)$name <- V(gDE)$name
+V(gDE)$label <- V(gDE)$name
+# Remove edges below absolute Pearson correlation 0.8
+gDE <- delete_edges(gDE, E(gDE)[which(E(gDE)$weight<0.8)])
+
+# Remove any vertices remaining that have no edges
+gDE <- delete.vertices(gDE, degree(gDE)==0)
+
+
+E(gDE)$width = E(gDE)$weight *1.5
+
+coDE = cluster_optimal(gDE, weights = NULL)
+V(gDE)$color <- coDE$membership +1
+#V(gDE)[which(V(gDE)$name %in% tt$name[which(tt$degenes<0)])]$color <- "darkblue"
+#V(gDE)[which(V(gDE)$name %in% tt$name[which(tt$degenes>0)])]$color <- "darkred"
+
+degDE <- degree(gDE, mode="all")
+V(gDE)$size = degDE*1.2
+
+#visIgraph(gDE,  physics = F, smooth = TRUE,idToLabel = T)%>%visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE,collapse = TRUE) %>%
+  #visLayout(randomSeed = 123)%>%visPhysics(solver = "forceAtlas2Based", forceAtlas2Based = list(gravitationalConstant = -10))#visPhysics(enabled = T, repulsion="nodeDistance" )
+#gDE%>%layout_with_graphopt(start = NULL, niter = 500,
+  # charge = 1, mass = 50, spring.length = 1,
+  # spring.constant = 1, max.sa.movement = 5)
+
+visIgraph(gDE ,physics = F, smooth = TRUE,idToLabel = T, layout = "layout_with_kk")%>%visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE,collapse = TRUE) %>% visLayout(randomSeed = 123,improvedLayout = T)%>%visPhysics(solver = "repulsion")#%>%visClusteringByHubsize()#visNodes(mass= 5)#visPhysics(enabled = F)
+
+
+```
+
+```{r communityTablesDE, echo = FALSE, message=FALSE, warning = FALSE}
+membersDE = coDE$membership 
+communityMatrixDE = data.frame(nodes = V(gDE)$name, community = as.factor(membersDE)) 
+communityMatrixDE = communityMatrixDE[order(communityMatrixDE$community),]
+
+datatable(communityMatrixDE,style="bootstrap", caption = 'Table 5: Differentially Abundant Proteins | community analysis',rownames = FALSE, options = list(columnDefs = list(list(className = 'dt-center', targets = 0:1)),order = list(list(1, 'asc')), "pageLength" = 50))
+
+```
+
+##Pathway Enrichment Analysis
+
+Pathway enrichment analysis were conducted on differentially abundant proteins related RBC and FIB using the InterMineR R package. Here the pathways were tested for over-representation in each of the proteins with fold change related with RBC and FIB relative to what is expected by chance and a p-value is computed for each pathway. The plots below represent the top 10 enriched pathways for the aforementioned communities - you can hover the bars for p-value information.
+
+```{r PathwayUp,echo = FALSE, message=FALSE, warning = FALSE,out.width="100%"}
+GO_enrichResult_rbc_fold_enrich = doEnrichment(
+  im = im.human,
+  ids = limma.res[order(limma.res$logFC,decreasing = T)[1:30],]$Accession,
+  widget = "pathway_enrichment"
+)
+trbc= "RBC Related Differentially Abundant Proteins | Pathway Analysis"
+makePlotlyGO(GO_enrichResult_rbc_fold_enrich, trbc)
+```
+
+```{r PathwayDown,echo = FALSE, message=FALSE, warning = FALSE,out.width="100%"}
+
+GO_enrichResult_fib_fold_enrich = doEnrichment(
+  im = im.human,
+  ids = limma.res[order(limma.res$logFC,decreasing = F)[1:30],]$Accession,
+  widget = "pathway_enrichment"
+)
+tfib = "FIB Related Differentially Abundant Proteins | Pathway Analysis"
+makePlotlyGO(GO_enrichResult_fib_fold_enrich, tfib)
+
+```
+
+
